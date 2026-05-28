@@ -3,7 +3,13 @@
 import { useState, useEffect, useCallback, use } from "react";
 import Link from "next/link";
 import type { ChampionshipFull, Participant, ColumnVisibility, EventWithParticipants } from "@/lib/types";
-import { columnLabels, defaultColumns } from "@/lib/types";
+import {
+  columnLabels,
+  defaultColumns,
+  normalizeColumnOrder,
+  visibleColumnsInOrder,
+  type ColumnKey,
+} from "@/lib/types";
 
 interface ParticipantForm {
   place: string;
@@ -56,17 +62,6 @@ function emptyParticipantRow(): EditParticipantRow {
   return { id: null, ...emptyParticipant };
 }
 
-const colKeys: (keyof ColumnVisibility)[] = [
-  "place",
-  "first_name",
-  "last_name",
-  "team",
-  "boat_number",
-  "lane",
-  "time_result",
-  "notes",
-];
-
 export default function AdminChampionshipPage({
   params,
 }: {
@@ -87,8 +82,11 @@ export default function AdminChampionshipPage({
     text: string;
   } | null>(null);
   const [replaceOnImport, setReplaceOnImport] = useState(false);
+  const [draggedColumn, setDraggedColumn] = useState<ColumnKey | null>(null);
 
   const cols = data?.visible_columns ?? defaultColumns;
+  const columnOrder = normalizeColumnOrder(data?.column_order);
+  const tableColumns = visibleColumnsInOrder(columnOrder, cols);
 
   const fetchData = useCallback(async () => {
     const res = await fetch(`/api/championships/${id}/full`);
@@ -112,6 +110,25 @@ export default function AdminChampionshipPage({
       body: JSON.stringify({ visible_columns: updated }),
     });
     fetchData();
+  }
+
+  async function saveColumnOrder(order: ColumnKey[]) {
+    await fetch(`/api/championships/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ column_order: order }),
+    });
+    fetchData();
+  }
+
+  function reorderColumns(fromKey: ColumnKey, toKey: ColumnKey) {
+    const order = [...columnOrder];
+    const from = order.indexOf(fromKey);
+    const to = order.indexOf(toKey);
+    if (from < 0 || to < 0 || from === to) return;
+    order.splice(from, 1);
+    order.splice(to, 0, fromKey);
+    saveColumnOrder(order);
   }
 
   async function handleExcelImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -493,22 +510,49 @@ export default function AdminChampionshipPage({
       {showColumnSettings && (
         <div className="border-b border-gray-200 bg-white px-4 py-4">
           <div className="mx-auto max-w-6xl">
-            <p className="mb-3 text-sm font-medium text-gray-700">
-              Show/hide columns for this championship:
+            <p className="mb-1 text-sm font-medium text-gray-700">
+              Show/hide and reorder columns for this championship:
+            </p>
+            <p className="mb-3 text-xs text-gray-500">
+              Drag a column to change order. Click the label to show or hide.
             </p>
             <div className="flex flex-wrap gap-2">
-              {colKeys.map((key) => (
-                <button
+              {columnOrder.map((key) => (
+                <div
                   key={key}
-                  onClick={() => toggleColumn(key)}
-                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                    cols[key]
-                      ? "bg-primary-100 text-primary-700"
-                      : "bg-gray-100 text-gray-400 line-through"
+                  draggable
+                  onDragStart={() => setDraggedColumn(key)}
+                  onDragEnd={() => setDraggedColumn(null)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (draggedColumn && draggedColumn !== key) {
+                      reorderColumns(draggedColumn, key);
+                    }
+                    setDraggedColumn(null);
+                  }}
+                  className={`flex items-center gap-1 rounded-full border px-1 py-1 text-sm font-medium transition ${
+                    draggedColumn === key
+                      ? "border-primary-400 bg-primary-50 opacity-70"
+                      : cols[key]
+                        ? "border-primary-200 bg-primary-100 text-primary-700"
+                        : "border-gray-200 bg-gray-100 text-gray-400"
                   }`}
                 >
-                  {columnLabels[key]}
-                </button>
+                  <span
+                    className="cursor-grab select-none px-1 text-gray-400 active:cursor-grabbing"
+                    title="Drag to reorder"
+                  >
+                    ⠿
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleColumn(key)}
+                    className={`px-2 py-0.5 ${!cols[key] ? "line-through" : ""}`}
+                  >
+                    {columnLabels[key]}
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -658,14 +702,11 @@ export default function AdminChampionshipPage({
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500">
-                          {colKeys.map(
-                            (key) =>
-                              cols[key] && (
-                                <th key={key} className="px-3 py-2 font-medium">
-                                  {columnLabels[key]}
-                                </th>
-                              )
-                          )}
+                          {tableColumns.map((key) => (
+                            <th key={key} className="px-3 py-2 font-medium">
+                              {columnLabels[key]}
+                            </th>
+                          ))}
                           {isEditing && (
                             <th className="px-3 py-2 font-medium w-20">Remove</th>
                           )}
@@ -678,7 +719,7 @@ export default function AdminChampionshipPage({
                                 key={rowIndex}
                                 className="border-b border-gray-50 bg-blue-50/20"
                               >
-                                {colKeys.map((key) =>
+                                {tableColumns.map((key) =>
                                   renderEditInput(rowIndex, key)
                                 )}
                                 <td className="px-3 py-2">
@@ -694,7 +735,7 @@ export default function AdminChampionshipPage({
                             ))
                           : event.participants.map((p) => (
                               <tr key={p.id} className="border-b border-gray-50">
-                                {colKeys.map((key) => renderDisplayCell(key, p))}
+                                {tableColumns.map((key) => renderDisplayCell(key, p))}
                               </tr>
                             ))}
                       </tbody>

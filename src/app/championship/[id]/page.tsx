@@ -1,7 +1,13 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getChampionshipFull } from "@/lib/db";
-import { columnLabels, type ColumnVisibility } from "@/lib/types";
+import {
+  columnLabels,
+  visibleColumnsInOrder,
+  type ColumnKey,
+  type Participant,
+} from "@/lib/types";
 import PrintButton from "@/components/PrintButton";
 import LiveRefresh from "@/components/LiveRefresh";
 
@@ -54,16 +60,47 @@ function PlaceBadge({ place }: { place: number | null }) {
   return <span className="font-medium text-gray-600">{place}th</span>;
 }
 
-const colKeys: (keyof ColumnVisibility)[] = [
-  "place",
-  "first_name",
-  "last_name",
-  "team",
-  "boat_number",
-  "lane",
-  "time_result",
-  "notes",
-];
+function columnHeaderLabel(key: ColumnKey, cols: Record<ColumnKey, boolean>) {
+  if (key === "first_name" && cols.last_name && !cols.first_name) {
+    return "Name";
+  }
+  return columnLabels[key];
+}
+
+function renderParticipantCell(key: ColumnKey, p: Participant) {
+  switch (key) {
+    case "place":
+      return (
+        <td className="px-6 py-3">
+          <PlaceBadge place={p.place} />
+        </td>
+      );
+    case "first_name":
+      return (
+        <td className="px-6 py-3 font-medium">{p.first_name || "-"}</td>
+      );
+    case "last_name":
+      return (
+        <td className="px-6 py-3 font-medium">{p.last_name || "-"}</td>
+      );
+    case "team":
+      return <td className="px-6 py-3 text-gray-700">{p.team || "-"}</td>;
+    case "boat_number":
+      return <td className="px-6 py-3 text-gray-600">{p.boat_number || "-"}</td>;
+    case "lane":
+      return <td className="px-6 py-3 text-gray-600">{p.lane ?? "-"}</td>;
+    case "time_result":
+      return (
+        <td className="px-6 py-3 font-mono text-gray-700">
+          {p.time_result || "-"}
+        </td>
+      );
+    case "notes":
+      return (
+        <td className="px-6 py-3 text-gray-500 italic">{p.notes || "-"}</td>
+      );
+  }
+}
 
 export default async function ChampionshipPage({
   params,
@@ -78,6 +115,10 @@ export default async function ChampionshipPage({
   }
 
   const cols = championship.visible_columns;
+  const tableColumns = visibleColumnsInOrder(
+    championship.column_order,
+    cols
+  );
 
   return (
     <div className="min-h-screen">
@@ -209,16 +250,11 @@ export default async function ChampionshipPage({
                     <table className="w-full text-left text-sm">
                       <thead>
                         <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500">
-                          {colKeys.map(
-                            (key) =>
-                              cols[key] && (
-                                <th key={key} className="px-6 py-3 font-medium">
-                                  {key === "first_name" && cols.last_name && !cols.first_name
-                                    ? "Name"
-                                    : columnLabels[key]}
-                                </th>
-                              )
-                          )}
+                          {tableColumns.map((key) => (
+                            <th key={key} className="px-6 py-3 font-medium">
+                              {columnHeaderLabel(key, cols)}
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
@@ -233,46 +269,11 @@ export default async function ChampionshipPage({
                                 : ""
                             }`}
                           >
-                            {cols.place && (
-                              <td className="px-6 py-3">
-                                <PlaceBadge place={p.place} />
-                              </td>
-                            )}
-                            {cols.first_name && (
-                              <td className="px-6 py-3 font-medium">
-                                {p.first_name || "-"}
-                              </td>
-                            )}
-                            {cols.last_name && (
-                              <td className="px-6 py-3 font-medium">
-                                {p.last_name || "-"}
-                              </td>
-                            )}
-                            {cols.team && (
-                              <td className="px-6 py-3 text-gray-700">
-                                {p.team || "-"}
-                              </td>
-                            )}
-                            {cols.boat_number && (
-                              <td className="px-6 py-3 text-gray-600">
-                                {p.boat_number || "-"}
-                              </td>
-                            )}
-                            {cols.lane && (
-                              <td className="px-6 py-3 text-gray-600">
-                                {p.lane ?? "-"}
-                              </td>
-                            )}
-                            {cols.time_result && (
-                              <td className="px-6 py-3 font-mono text-gray-700">
-                                {p.time_result || "-"}
-                              </td>
-                            )}
-                            {cols.notes && (
-                              <td className="px-6 py-3 text-gray-500 italic">
-                                {p.notes || "-"}
-                              </td>
-                            )}
+                            {tableColumns.map((key) => (
+                              <Fragment key={key}>
+                                {renderParticipantCell(key, p)}
+                              </Fragment>
+                            ))}
                           </tr>
                         ))}
                       </tbody>

@@ -9,8 +9,9 @@ import type {
   MedalRow,
   ColumnVisibility,
   SiteSettings,
+  ColumnKey,
 } from "./types";
-import { defaultColumns } from "./types";
+import { defaultColumns, defaultColumnOrder, normalizeColumnOrder } from "./types";
 import type { ParsedRace } from "./parseStartListExcel";
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -37,6 +38,9 @@ function mapChampionship(row: Record<string, unknown>): Championship {
       ...defaultColumns,
       ...((row.visible_columns as Partial<ColumnVisibility>) ?? {}),
     },
+    column_order: normalizeColumnOrder(
+      (row.column_order as ColumnKey[] | undefined) ?? undefined
+    ),
     created_at: String(row.created_at ?? ""),
   };
 }
@@ -217,7 +221,8 @@ export async function createChampionship(
   date: string,
   location: string,
   isLive: boolean = false,
-  visibleColumns?: Partial<ColumnVisibility>
+  visibleColumns?: Partial<ColumnVisibility>,
+  columnOrder?: ColumnKey[]
 ): Promise<Championship> {
   const { data, error } = await supabase
     .from("championships")
@@ -227,6 +232,7 @@ export async function createChampionship(
       location,
       is_live: isLive,
       visible_columns: { ...defaultColumns, ...(visibleColumns ?? {}) },
+      column_order: normalizeColumnOrder(columnOrder ?? defaultColumnOrder),
     })
     .select("*")
     .single();
@@ -236,7 +242,14 @@ export async function createChampionship(
 
 export async function updateChampionship(
   id: number,
-  data: { name?: string; date?: string; location?: string; is_live?: boolean; visible_columns?: Partial<ColumnVisibility> }
+  data: {
+    name?: string;
+    date?: string;
+    location?: string;
+    is_live?: boolean;
+    visible_columns?: Partial<ColumnVisibility>;
+    column_order?: ColumnKey[];
+  }
 ): Promise<Championship | null> {
   const current = await getChampionship(id);
   if (!current) return null;
@@ -250,6 +263,9 @@ export async function updateChampionship(
       visible_columns: data.visible_columns
         ? { ...current.visible_columns, ...data.visible_columns }
         : current.visible_columns,
+      column_order: data.column_order
+        ? normalizeColumnOrder(data.column_order)
+        : current.column_order,
     })
     .eq("id", id)
     .select("*")
@@ -278,7 +294,8 @@ export async function duplicateChampionship(
     new Date().toISOString().split("T")[0],
     source.location,
     false,
-    source.visible_columns
+    source.visible_columns,
+    source.column_order
   );
 
   const sourceFull = await getChampionshipFull(id);

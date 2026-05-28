@@ -9,6 +9,38 @@ export interface ColumnVisibility {
   notes: boolean;
 }
 
+export type ColumnKey = keyof ColumnVisibility;
+
+export const defaultColumnOrder: ColumnKey[] = [
+  "place",
+  "first_name",
+  "last_name",
+  "team",
+  "boat_number",
+  "lane",
+  "time_result",
+  "notes",
+];
+
+export function normalizeColumnOrder(order: ColumnKey[] | undefined): ColumnKey[] {
+  const valid = new Set<ColumnKey>(defaultColumnOrder);
+  const result: ColumnKey[] = [];
+  for (const key of order ?? []) {
+    if (valid.has(key) && !result.includes(key)) result.push(key);
+  }
+  for (const key of defaultColumnOrder) {
+    if (!result.includes(key)) result.push(key);
+  }
+  return result;
+}
+
+export function visibleColumnsInOrder(
+  order: ColumnKey[] | undefined,
+  visibility: ColumnVisibility
+): ColumnKey[] {
+  return normalizeColumnOrder(order).filter((key) => visibility[key]);
+}
+
 export const defaultColumns: ColumnVisibility = {
   place: true,
   first_name: true,
@@ -38,6 +70,7 @@ export interface Championship {
   location: string;
   is_live: boolean;
   visible_columns: ColumnVisibility;
+  column_order: ColumnKey[];
   created_at: string;
 }
 
