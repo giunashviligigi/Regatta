@@ -16,6 +16,17 @@ interface ParticipantForm {
   notes: string;
 }
 
+interface EditParticipantRow extends ParticipantForm {
+  id: number | null;
+}
+
+interface EventEditState {
+  name: string;
+  start_time: string;
+  participants: EditParticipantRow[];
+  removedIds: number[];
+}
+
 const emptyParticipant: ParticipantForm = {
   place: "",
   first_name: "",
@@ -26,6 +37,24 @@ const emptyParticipant: ParticipantForm = {
   time_result: "",
   notes: "",
 };
+
+function participantToForm(p: Participant): EditParticipantRow {
+  return {
+    id: p.id,
+    place: p.place?.toString() || "",
+    first_name: p.first_name,
+    last_name: p.last_name,
+    team: p.team || "",
+    boat_number: p.boat_number || "",
+    lane: p.lane?.toString() || "",
+    time_result: p.time_result || "",
+    notes: p.notes || "",
+  };
+}
+
+function emptyParticipantRow(): EditParticipantRow {
+  return { id: null, ...emptyParticipant };
+}
 
 const colKeys: (keyof ColumnVisibility)[] = [
   "place",
@@ -48,12 +77,9 @@ export default function AdminChampionshipPage({
   const [loading, setLoading] = useState(true);
   const [newEventName, setNewEventName] = useState("");
   const [newEventTime, setNewEventTime] = useState("");
+  const [eventEdit, setEventEdit] = useState<EventEditState | null>(null);
   const [editingEventId, setEditingEventId] = useState<number | null>(null);
-  const [editEventName, setEditEventName] = useState("");
-  const [editEventTime, setEditEventTime] = useState("");
-  const [addingParticipantTo, setAddingParticipantTo] = useState<number | null>(null);
-  const [editingParticipant, setEditingParticipant] = useState<number | null>(null);
-  const [participantForm, setParticipantForm] = useState<ParticipantForm>(emptyParticipant);
+  const [savingEvent, setSavingEvent] = useState(false);
   const [showColumnSettings, setShowColumnSettings] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<{
@@ -145,18 +171,120 @@ export default function AdminChampionshipPage({
     fetchData();
   }
 
-  async function saveEvent(eventId: number) {
-    await fetch(`/api/events/${eventId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: editEventName, start_time: editEventTime }),
+  function openEventEdit(
+    event: EventWithParticipants,
+    withNewRow = false
+  ) {
+    setEditingEventId(event.id);
+    setEventEdit({
+      name: event.name,
+      start_time: event.start_time || "",
+      participants: [
+        ...event.participants.map(participantToForm),
+        ...(withNewRow ? [emptyParticipantRow()] : []),
+      ],
+      removedIds: [],
     });
+  }
+
+  function cancelEventEdit() {
     setEditingEventId(null);
-    fetchData();
+    setEventEdit(null);
+  }
+
+  function updateParticipantRow(
+    index: number,
+    key: keyof ParticipantForm,
+    value: string
+  ) {
+    setEventEdit((prev) => {
+      if (!prev) return prev;
+      const participants = [...prev.participants];
+      participants[index] = { ...participants[index], [key]: value };
+      return { ...prev, participants };
+    });
+  }
+
+  function addParticipantRow() {
+    setEventEdit((prev) => {
+      if (!prev) return prev;
+      return { ...prev, participants: [...prev.participants, emptyParticipantRow()] };
+    });
+  }
+
+  function removeParticipantRow(index: number) {
+    setEventEdit((prev) => {
+      if (!prev) return prev;
+      const row = prev.participants[index];
+      const removedIds =
+        row.id !== null ? [...prev.removedIds, row.id] : prev.removedIds;
+      const participants = prev.participants.filter((_, i) => i !== index);
+      return { ...prev, participants, removedIds };
+    });
+  }
+
+  function participantPayload(row: EditParticipantRow) {
+    return {
+      place: row.place ? Number(row.place) : null,
+      first_name: row.first_name,
+      last_name: row.last_name,
+      team: row.team,
+      boat_number: row.boat_number,
+      lane: row.lane ? Number(row.lane) : null,
+      time_result: row.time_result,
+      notes: row.notes,
+    };
+  }
+
+  async function saveEventEdit(eventId: number) {
+    if (!eventEdit || !eventEdit.name.trim()) return;
+    setSavingEvent(true);
+
+    try {
+      await fetch(`/api/events/${eventId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: eventEdit.name.trim(),
+          start_time: eventEdit.start_time,
+        }),
+      });
+
+      for (const removedId of eventEdit.removedIds) {
+        await fetch(`/api/participants/${removedId}`, { method: "DELETE" });
+      }
+
+      for (const row of eventEdit.participants) {
+        const payload = participantPayload(row);
+        if (row.id !== null) {
+          await fetch(`/api/participants/${row.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+        } else {
+          const hasData = Object.values(payload).some(
+            (v) => v !== null && v !== "" && v !== 0
+          );
+          if (!hasData) continue;
+          await fetch("/api/participants", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event_id: eventId, ...payload }),
+          });
+        }
+      }
+
+      cancelEventEdit();
+      fetchData();
+    } finally {
+      setSavingEvent(false);
+    }
   }
 
   async function deleteEvent(eventId: number) {
     if (!confirm("Delete this event and all its participants?")) return;
+    if (editingEventId === eventId) cancelEventEdit();
     await fetch(`/api/events/${eventId}`, { method: "DELETE" });
     fetchData();
   }
@@ -188,72 +316,6 @@ export default function AdminChampionshipPage({
     fetchData();
   }
 
-  async function addParticipant(e: React.FormEvent, eventId: number) {
-    e.preventDefault();
-    await fetch("/api/participants", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        event_id: eventId,
-        place: participantForm.place ? Number(participantForm.place) : null,
-        first_name: participantForm.first_name,
-        last_name: participantForm.last_name,
-        team: participantForm.team,
-        boat_number: participantForm.boat_number,
-        lane: participantForm.lane ? Number(participantForm.lane) : null,
-        time_result: participantForm.time_result,
-        notes: participantForm.notes,
-      }),
-    });
-    setAddingParticipantTo(null);
-    setParticipantForm(emptyParticipant);
-    fetchData();
-  }
-
-  function startEditParticipant(p: Participant) {
-    setEditingParticipant(p.id);
-    setParticipantForm({
-      place: p.place?.toString() || "",
-      first_name: p.first_name,
-      last_name: p.last_name,
-      team: p.team || "",
-      boat_number: p.boat_number || "",
-      lane: p.lane?.toString() || "",
-      time_result: p.time_result || "",
-      notes: p.notes || "",
-    });
-  }
-
-  async function saveParticipant(participantId: number) {
-    await fetch(`/api/participants/${participantId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        place: participantForm.place ? Number(participantForm.place) : null,
-        first_name: participantForm.first_name,
-        last_name: participantForm.last_name,
-        team: participantForm.team,
-        boat_number: participantForm.boat_number,
-        lane: participantForm.lane ? Number(participantForm.lane) : null,
-        time_result: participantForm.time_result,
-        notes: participantForm.notes,
-      }),
-    });
-    setEditingParticipant(null);
-    setParticipantForm(emptyParticipant);
-    fetchData();
-  }
-
-  async function deleteParticipant(participantId: number) {
-    if (!confirm("Remove this participant?")) return;
-    await fetch(`/api/participants/${participantId}`, { method: "DELETE" });
-    fetchData();
-  }
-
-  function updateForm(key: keyof ParticipantForm, value: string) {
-    setParticipantForm((f) => ({ ...f, [key]: value }));
-  }
-
   if (loading)
     return (
       <div className="flex min-h-screen items-center justify-center text-gray-400">
@@ -267,25 +329,32 @@ export default function AdminChampionshipPage({
       </div>
     );
 
-  function renderEditCell(key: keyof ColumnVisibility) {
-    if (!cols[key]) return null;
+  function renderEditInput(
+    rowIndex: number,
+    key: keyof ColumnVisibility
+  ) {
+    if (!cols[key] || !eventEdit) return null;
     const formKey = key as keyof ParticipantForm;
     const isNumber = key === "place" || key === "lane";
-    const widths: Record<string, string> = {
-      place: "w-16", first_name: "w-full", last_name: "w-full", team: "w-full",
-      boat_number: "w-20", lane: "w-16", time_result: "w-24", notes: "w-full",
-    };
     const placeholders: Record<string, string> = {
-      place: "#", first_name: "First name", last_name: "Last name", team: "Team",
-      boat_number: "Boat #", lane: "Lane", time_result: "0:54.32", notes: "Notes",
+      place: "#",
+      first_name: "First name",
+      last_name: "Last name",
+      team: "Team",
+      boat_number: "Boat #",
+      lane: "Lane",
+      time_result: "0:54.32",
+      notes: "Notes",
     };
     return (
       <td key={key} className="px-3 py-2">
         <input
           type={isNumber ? "number" : "text"}
-          value={participantForm[formKey]}
-          onChange={(e) => updateForm(formKey, e.target.value)}
-          className={`${widths[key]} rounded border border-gray-300 px-2 py-1 text-sm`}
+          value={eventEdit.participants[rowIndex][formKey]}
+          onChange={(e) =>
+            updateParticipantRow(rowIndex, formKey, e.target.value)
+          }
+          className="w-full min-w-[4rem] rounded border border-gray-300 px-2 py-1 text-sm"
           placeholder={placeholders[key]}
           min={isNumber ? "1" : undefined}
         />
@@ -296,9 +365,14 @@ export default function AdminChampionshipPage({
   function renderDisplayCell(key: keyof ColumnVisibility, p: Participant) {
     if (!cols[key]) return null;
     const values: Record<keyof ColumnVisibility, string | number> = {
-      place: p.place ?? "-", first_name: p.first_name || "-", last_name: p.last_name || "-",
-      team: p.team || "-", boat_number: p.boat_number || "-", lane: p.lane ?? "-",
-      time_result: p.time_result || "-", notes: p.notes || "-",
+      place: p.place ?? "-",
+      first_name: p.first_name || "-",
+      last_name: p.last_name || "-",
+      team: p.team || "-",
+      boat_number: p.boat_number || "-",
+      lane: p.lane ?? "-",
+      time_result: p.time_result || "-",
+      notes: p.notes || "-",
     };
     const isPlace = key === "place";
     const isTime = key === "time_result";
@@ -513,43 +587,47 @@ export default function AdminChampionshipPage({
           </div>
         ) : (
           <div className="space-y-6">
-            {data.events.map((event) => (
-              <div
-                key={event.id}
-                className={`overflow-hidden rounded-xl bg-white shadow-sm ${
-                  event.is_live ? "ring-2 ring-red-400" : ""
-                }`}
-              >
-                <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-6 py-3">
-                  {editingEventId === event.id ? (
-                    <div className="flex flex-1 items-center gap-2">
-                      <input
-                        type="text"
-                        value={editEventName}
-                        onChange={(e) => setEditEventName(e.target.value)}
-                        className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                      />
-                      <input
-                        type="time"
-                        value={editEventTime}
-                        onChange={(e) => setEditEventTime(e.target.value)}
-                        className="w-28 rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                      />
-                      <button
-                        onClick={() => saveEvent(event.id)}
-                        className="rounded-lg bg-primary-700 px-3 py-1.5 text-sm text-white hover:bg-primary-800"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingEventId(null)}
-                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
-                      >
-                        Cancel
-                      </button>
+            {data.events.map((event) => {
+              const isEditing = editingEventId === event.id && eventEdit;
+
+              return (
+                <div
+                  key={event.id}
+                  className={`overflow-hidden rounded-xl bg-white shadow-sm ${
+                    event.is_live ? "ring-2 ring-red-400" : ""
+                  } ${isEditing ? "ring-2 ring-primary-400" : ""}`}
+                >
+                  {isEditing ? (
+                    <div className="border-b border-primary-100 bg-primary-50/40 px-6 py-4">
+                      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-primary-700">
+                        Editing race
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                        <input
+                          type="text"
+                          value={eventEdit.name}
+                          onChange={(e) =>
+                            setEventEdit({ ...eventEdit, name: e.target.value })
+                          }
+                          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          placeholder="Event name"
+                        />
+                        <input
+                          type="time"
+                          value={eventEdit.start_time}
+                          onChange={(e) =>
+                            setEventEdit({
+                              ...eventEdit,
+                              start_time: e.target.value,
+                            })
+                          }
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 sm:w-36"
+                          title="Start time"
+                        />
+                      </div>
                     </div>
                   ) : (
-                    <>
+                    <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-6 py-3">
                       <div className="flex items-center gap-3">
                         {event.start_time && (
                           <span className="rounded bg-gray-200 px-2 py-0.5 text-xs font-mono font-medium text-gray-600">
@@ -561,12 +639,8 @@ export default function AdminChampionshipPage({
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={() => {
-                            setEditingEventId(event.id);
-                            setEditEventName(event.name);
-                            setEditEventTime(event.start_time || "");
-                          }}
-                          className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-200"
+                          onClick={() => openEventEdit(event)}
+                          className="rounded px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50"
                         >
                           Edit
                         </button>
@@ -577,83 +651,97 @@ export default function AdminChampionshipPage({
                           Delete
                         </button>
                       </div>
-                    </>
+                    </div>
                   )}
-                </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500">
-                        {colKeys.map(
-                          (key) =>
-                            cols[key] && (
-                              <th key={key} className="px-3 py-2 font-medium">
-                                {columnLabels[key]}
-                              </th>
-                            )
-                        )}
-                        <th className="px-3 py-2 font-medium">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {event.participants.map((p) => (
-                        <tr key={p.id} className="border-b border-gray-50">
-                          {editingParticipant === p.id ? (
-                            <>
-                              {colKeys.map((key) => renderEditCell(key))}
-                              <td className="px-3 py-2">
-                                <div className="flex gap-1">
-                                  <button onClick={() => saveParticipant(p.id)} className="rounded bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-800">Save</button>
-                                  <button onClick={() => { setEditingParticipant(null); setParticipantForm(emptyParticipant); }} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100">Cancel</button>
-                                </div>
-                              </td>
-                            </>
-                          ) : (
-                            <>
-                              {colKeys.map((key) => renderDisplayCell(key, p))}
-                              <td className="px-3 py-2">
-                                <div className="flex gap-1">
-                                  <button onClick={() => startEditParticipant(p)} className="rounded px-2 py-1 text-xs text-primary-600 hover:bg-primary-50">Edit</button>
-                                  <button onClick={() => deleteParticipant(p.id)} className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50">Delete</button>
-                                </div>
-                              </td>
-                            </>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500">
+                          {colKeys.map(
+                            (key) =>
+                              cols[key] && (
+                                <th key={key} className="px-3 py-2 font-medium">
+                                  {columnLabels[key]}
+                                </th>
+                              )
+                          )}
+                          {isEditing && (
+                            <th className="px-3 py-2 font-medium w-20">Remove</th>
                           )}
                         </tr>
-                      ))}
-
-                      {addingParticipantTo === event.id && (
-                        <tr className="border-b border-gray-50 bg-blue-50/30">
-                          {colKeys.map((key) => renderEditCell(key))}
-                          <td className="px-3 py-2">
-                            <div className="flex gap-1">
-                              <button onClick={(e) => addParticipant(e, event.id)} className="rounded bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-800">Add</button>
-                              <button onClick={() => { setAddingParticipantTo(null); setParticipantForm(emptyParticipant); }} className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100">Cancel</button>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {addingParticipantTo !== event.id && (
-                  <div className="border-t border-gray-100 px-4 py-3">
-                    <button
-                      onClick={() => {
-                        setAddingParticipantTo(event.id);
-                        setParticipantForm(emptyParticipant);
-                        setEditingParticipant(null);
-                      }}
-                      className="text-sm text-primary-600 hover:text-primary-800"
-                    >
-                      + Add Participant
-                    </button>
+                      </thead>
+                      <tbody>
+                        {isEditing
+                          ? eventEdit.participants.map((_, rowIndex) => (
+                              <tr
+                                key={rowIndex}
+                                className="border-b border-gray-50 bg-blue-50/20"
+                              >
+                                {colKeys.map((key) =>
+                                  renderEditInput(rowIndex, key)
+                                )}
+                                <td className="px-3 py-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeParticipantRow(rowIndex)}
+                                    className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50"
+                                  >
+                                    Remove
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          : event.participants.map((p) => (
+                              <tr key={p.id} className="border-b border-gray-50">
+                                {colKeys.map((key) => renderDisplayCell(key, p))}
+                              </tr>
+                            ))}
+                      </tbody>
+                    </table>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {isEditing ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={addParticipantRow}
+                        className="text-sm text-primary-600 hover:text-primary-800"
+                      >
+                        + Add row
+                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => saveEventEdit(event.id)}
+                          disabled={savingEvent}
+                          className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60"
+                        >
+                          {savingEvent ? "Saving..." : "Save race"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEventEdit}
+                          disabled={savingEvent}
+                          className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border-t border-gray-100 px-4 py-3">
+                      <button
+                        onClick={() => openEventEdit(event, true)}
+                        className="text-sm text-primary-600 hover:text-primary-800"
+                      >
+                        + Add Participant
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </main>
