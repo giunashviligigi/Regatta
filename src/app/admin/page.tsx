@@ -12,6 +12,9 @@ export default function AdminDashboard() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({ name: "", date: "", location: "" });
   const [loading, setLoading] = useState(true);
+  const [imagesLink, setImagesLink] = useState("");
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState("");
 
   const fetchChampionships = useCallback(async () => {
     const res = await fetch("/api/championships");
@@ -20,9 +23,37 @@ export default function AdminDashboard() {
     setLoading(false);
   }, []);
 
+  const fetchSettings = useCallback(async () => {
+    const res = await fetch("/api/settings");
+    if (!res.ok) return;
+    const data = await res.json();
+    setImagesLink(data.images_link || "");
+  }, []);
+
   useEffect(() => {
     fetchChampionships();
-  }, [fetchChampionships]);
+    fetchSettings();
+  }, [fetchChampionships, fetchSettings]);
+
+  async function handleSaveSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setSettingsSaving(true);
+    setSettingsMessage("");
+    const res = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ images_link: imagesLink }),
+    });
+    setSettingsSaving(false);
+    if (!res.ok) {
+      const data = await res.json();
+      setSettingsMessage(data.error || "Failed to save settings");
+      return;
+    }
+    const data = await res.json();
+    setImagesLink(data.images_link || "");
+    setSettingsMessage("Images link saved.");
+  }
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -120,6 +151,40 @@ export default function AdminDashboard() {
       </header>
 
       <main className="mx-auto max-w-5xl px-4 py-8">
+        <section className="mb-8 rounded-xl bg-white p-6 shadow-sm">
+          <h2 className="mb-1 text-lg font-semibold text-gray-800">
+            Site Settings
+          </h2>
+          <p className="mb-4 text-sm text-gray-500">
+            Set the URL for the Images button on the home page. Leave empty to
+            hide the button.
+          </p>
+          <form onSubmit={handleSaveSettings} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Images link
+              </label>
+              <input
+                type="url"
+                value={imagesLink}
+                onChange={(e) => setImagesLink(e.target.value)}
+                placeholder="https://example.com/photos"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={settingsSaving}
+              className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60"
+            >
+              {settingsSaving ? "Saving..." : "Save Link"}
+            </button>
+          </form>
+          {settingsMessage ? (
+            <p className="mt-3 text-sm text-primary-700">{settingsMessage}</p>
+          ) : null}
+        </section>
+
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-800">
             Championships

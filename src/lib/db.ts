@@ -8,6 +8,7 @@ import type {
   ChampionshipFull,
   MedalRow,
   ColumnVisibility,
+  SiteSettings,
 } from "./types";
 import { defaultColumns } from "./types";
 import type { ParsedRace } from "./parseStartListExcel";
@@ -534,4 +535,39 @@ export async function deleteParticipant(id: number): Promise<boolean> {
     .eq("id", id);
   if (error) throw error;
   return (count ?? 0) > 0;
+}
+
+// --- Site settings ---
+
+const defaultSiteSettings: SiteSettings = { images_link: "" };
+
+export async function getSiteSettings(): Promise<SiteSettings> {
+  const { data, error } = await supabase
+    .from("site_settings")
+    .select("images_link")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    await supabase.from("site_settings").insert({ id: 1, images_link: "" });
+    return defaultSiteSettings;
+  }
+  return { images_link: String(data.images_link ?? "").trim() };
+}
+
+export async function updateSiteSettings(
+  imagesLink: string
+): Promise<SiteSettings> {
+  const images_link = imagesLink.trim();
+  const { data, error } = await supabase
+    .from("site_settings")
+    .upsert({
+      id: 1,
+      images_link,
+      updated_at: new Date().toISOString(),
+    })
+    .select("images_link")
+    .single();
+  if (error) throw error;
+  return { images_link: String(data.images_link ?? "").trim() };
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getAllChampionships } from "@/lib/db";
+import { getAllChampionships, getSiteSettings } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +17,11 @@ function formatDate(dateStr: string) {
 }
 
 export default async function HomePage() {
-  const championships = await getAllChampionships();
+  const [championships, settings] = await Promise.all([
+    getAllChampionships(),
+    getSiteSettings(),
+  ]);
+  const imagesLink = settings.images_link;
 
   return (
     <div className="min-h-screen">
@@ -29,15 +33,40 @@ export default async function HomePage() {
           <p className="text-lg text-primary-200">
             Official results and records
           </p>
-          <Link
-            href="/medals"
-            className="mt-4 inline-flex items-center gap-2 rounded-lg bg-white/10 px-5 py-2.5 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/20"
-          >
-            <svg className="h-5 w-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-            Medal Table
-          </Link>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+            <Link
+              href="/medals"
+              className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-5 py-2.5 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/20"
+            >
+              <svg className="h-5 w-5 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+              Medal Table
+            </Link>
+            {imagesLink ? (
+              <a
+                href={imagesLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-5 py-2.5 text-sm font-medium text-white backdrop-blur-sm transition hover:bg-white/20"
+              >
+                <svg
+                  className="h-5 w-5 text-sky-300"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+                Images
+              </a>
+            ) : null}
+          </div>
         </div>
       </header>
 

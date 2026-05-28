@@ -79,3 +79,7 @@ export interface Participant {
 export interface ChampionshipFull extends Championship {
   events: EventWithParticipants[];
 }
+
+export interface SiteSettings {
+  images_link: string;
+}
