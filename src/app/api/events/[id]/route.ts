@@ -12,6 +12,7 @@ export async function PUT(
     sort_order: body.sort_order,
     start_time: body.start_time,
     is_live_override: body.is_live_override,
+    race_note: typeof body.race_note === "string" ? body.race_note : undefined,
   });
   if (!event) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

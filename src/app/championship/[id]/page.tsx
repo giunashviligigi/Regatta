@@ -245,7 +245,8 @@ export default async function ChampionshipPage({
                   <div className="p-6 text-center text-gray-400">
                     No results yet
                   </div>
-                ) : (
+                ) : null}
+                {event.participants.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
                       <thead>
@@ -279,7 +280,17 @@ export default async function ChampionshipPage({
                       </tbody>
                     </table>
                   </div>
-                )}
+                ) : null}
+                {event.race_note ? (
+                  <div className="border-t border-gray-100 bg-amber-50/30 px-6 py-4">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Note
+                    </p>
+                    <p className="whitespace-pre-wrap text-sm text-gray-700">
+                      {event.race_note}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

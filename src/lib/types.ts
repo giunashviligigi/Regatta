@@ -89,6 +89,7 @@ export interface Event {
   start_time: string;
   sort_order: number;
   is_live_override: boolean | null;
+  race_note: string;
 }
 
 export interface EventWithParticipants extends Event {

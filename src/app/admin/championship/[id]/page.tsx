@@ -29,6 +29,7 @@ interface EditParticipantRow extends ParticipantForm {
 interface EventEditState {
   name: string;
   start_time: string;
+  race_note: string;
   participants: EditParticipantRow[];
   removedIds: number[];
 }
@@ -83,6 +84,9 @@ export default function AdminChampionshipPage({
   } | null>(null);
   const [replaceOnImport, setReplaceOnImport] = useState(false);
   const [draggedColumn, setDraggedColumn] = useState<ColumnKey | null>(null);
+  const [noteEditEventId, setNoteEditEventId] = useState<number | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
 
   const cols = data?.visible_columns ?? defaultColumns;
   const columnOrder = normalizeColumnOrder(data?.column_order);
@@ -193,9 +197,11 @@ export default function AdminChampionshipPage({
     withNewRow = false
   ) {
     setEditingEventId(event.id);
+    setNoteEditEventId(null);
     setEventEdit({
       name: event.name,
       start_time: event.start_time || "",
+      race_note: event.race_note || "",
       participants: [
         ...event.participants.map(participantToForm),
         ...(withNewRow ? [emptyParticipantRow()] : []),
@@ -207,6 +213,32 @@ export default function AdminChampionshipPage({
   function cancelEventEdit() {
     setEditingEventId(null);
     setEventEdit(null);
+    setNoteEditEventId(null);
+  }
+
+  function startNoteEdit(event: EventWithParticipants) {
+    setNoteEditEventId(event.id);
+    setNoteDraft(event.race_note || "");
+  }
+
+  function cancelNoteEdit() {
+    setNoteEditEventId(null);
+    setNoteDraft("");
+  }
+
+  async function saveRaceNote(eventId: number) {
+    setSavingNote(true);
+    try {
+      await fetch(`/api/events/${eventId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ race_note: noteDraft }),
+      });
+      cancelNoteEdit();
+      fetchData();
+    } finally {
+      setSavingNote(false);
+    }
   }
 
   function updateParticipantRow(
@@ -264,6 +296,7 @@ export default function AdminChampionshipPage({
         body: JSON.stringify({
           name: eventEdit.name.trim(),
           start_time: eventEdit.start_time,
+          race_note: eventEdit.race_note,
         }),
       });
 
@@ -743,6 +776,26 @@ export default function AdminChampionshipPage({
                   </div>
 
                   {isEditing ? (
+                    <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-4">
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Race note (optional)
+                      </label>
+                      <textarea
+                        value={eventEdit.race_note}
+                        onChange={(e) =>
+                          setEventEdit({ ...eventEdit, race_note: e.target.value })
+                        }
+                        rows={3}
+                        placeholder="e.g. Final was delayed due to weather..."
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Shown under this race on the public page when not empty.
+                      </p>
+                    </div>
+                  ) : null}
+
+                  {isEditing ? (
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-4 py-3">
                       <button
                         type="button"
@@ -771,14 +824,71 @@ export default function AdminChampionshipPage({
                       </div>
                     </div>
                   ) : (
-                    <div className="border-t border-gray-100 px-4 py-3">
-                      <button
-                        onClick={() => openEventEdit(event, true)}
-                        className="text-sm text-primary-600 hover:text-primary-800"
-                      >
-                        + Add Participant
-                      </button>
-                    </div>
+                    <>
+                      <div className="border-t border-gray-100 px-4 py-3">
+                        <button
+                          onClick={() => openEventEdit(event, true)}
+                          className="text-sm text-primary-600 hover:text-primary-800"
+                        >
+                          + Add Participant
+                        </button>
+                      </div>
+                      <div className="border-t border-gray-100 bg-gray-50/40 px-4 py-3">
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+                          Race note
+                        </p>
+                        {noteEditEventId === event.id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={noteDraft}
+                              onChange={(e) => setNoteDraft(e.target.value)}
+                              rows={3}
+                              placeholder="Add a note for this race..."
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => saveRaceNote(event.id)}
+                                disabled={savingNote}
+                                className="rounded-lg bg-primary-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60"
+                              >
+                                {savingNote ? "Saving..." : "Save note"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelNoteEdit}
+                                disabled={savingNote}
+                                className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : event.race_note ? (
+                          <div>
+                            <p className="whitespace-pre-wrap text-sm text-gray-700">
+                              {event.race_note}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => startNoteEdit(event)}
+                              className="mt-2 text-sm text-primary-600 hover:text-primary-800"
+                            >
+                              Edit note
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startNoteEdit(event)}
+                            className="text-sm text-primary-600 hover:text-primary-800"
+                          >
+                            + Add race note
+                          </button>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               );

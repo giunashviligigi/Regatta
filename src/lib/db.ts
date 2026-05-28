@@ -56,6 +56,7 @@ function mapEvent(row: Record<string, unknown>): Event {
       row.is_live_override === null || row.is_live_override === undefined
         ? null
         : Boolean(row.is_live_override),
+    race_note: String(row.race_note ?? "").trim(),
   };
 }
 
@@ -306,7 +307,8 @@ export async function duplicateChampionship(
       newChamp.id,
       srcEvent.name,
       srcEvent.sort_order,
-      srcEvent.start_time
+      srcEvent.start_time,
+      srcEvent.race_note
     );
     for (const srcP of srcEvent.participants) {
       await createParticipant({
@@ -375,7 +377,8 @@ export async function createEvent(
   championshipId: number,
   name: string,
   sortOrder?: number,
-  startTime: string = ""
+  startTime: string = "",
+  raceNote: string = ""
 ): Promise<Event> {
   let nextSort = sortOrder;
   if (nextSort === undefined) {
@@ -398,6 +401,7 @@ export async function createEvent(
       start_time: startTime,
       sort_order: nextSort,
       is_live_override: null,
+      race_note: raceNote.trim(),
     })
     .select("*")
     .single();
@@ -407,7 +411,13 @@ export async function createEvent(
 
 export async function updateEvent(
   id: number,
-  data: { name?: string; sort_order?: number; start_time?: string; is_live_override?: boolean | null }
+  data: {
+    name?: string;
+    sort_order?: number;
+    start_time?: string;
+    is_live_override?: boolean | null;
+    race_note?: string;
+  }
 ): Promise<Event | null> {
   const { data: current, error: currentErr } = await supabase
     .from("events")
@@ -428,6 +438,10 @@ export async function updateEvent(
         data.is_live_override !== undefined
           ? data.is_live_override
           : current.is_live_override,
+      race_note:
+        data.race_note !== undefined
+          ? data.race_note.trim()
+          : String(current.race_note ?? ""),
     })
     .eq("id", id)
     .select("*")
