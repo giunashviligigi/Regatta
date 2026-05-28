@@ -71,39 +71,69 @@ function mapParticipant(row: Record<string, unknown>): Participant {
 }
 
 // --- Auto-live computation ---
+// Interpret race times in championship timezone, not server timezone.
+const CHAMPIONSHIP_TIMEZONE = process.env.CHAMPIONSHIP_TIMEZONE || "Asia/Tbilisi";
 
-function toEventDateTime(champ: Championship, e: Event): Date | null {
-  const date = (champ.date || "").trim();
-  const time = (e.start_time || "").trim();
-  if (!date || !time) return null;
-  const dt = new Date(`${date}T${time}:00`);
-  if (isNaN(dt.getTime())) return null;
-  return dt;
+function parseTimeToMinutes(time: string): number | null {
+  const t = (time || "").trim();
+  if (!t) return null;
+  const parts = t.split(":");
+  if (parts.length < 2) return null;
+  const hh = Number(parts[0]);
+  const mm = Number(parts[1]);
+  if (!Number.isInteger(hh) || !Number.isInteger(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+function getNowInTimeZone(timeZone: string): { date: string; minutes: number } {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(new Date());
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? "";
+
+  const date = `${get("year")}-${get("month")}-${get("day")}`;
+  const minutes = Number(get("hour")) * 60 + Number(get("minute"));
+  return { date, minutes };
 }
 
 function computeEventLiveStatus(champ: Championship, events: Event[]): boolean[] {
-  if (!champ.is_live) return events.map(() => false);
+  const nowLocal = getNowInTimeZone(CHAMPIONSHIP_TIMEZONE);
+  const isSameDay = (champ.date || "").trim() === nowLocal.date;
 
-  const now = new Date();
-
-  // Chronological schedule (across multiple days) for auto-live windowing
   const schedule = events
-    .map((e) => ({ e, dt: toEventDateTime(champ, e) }))
-    .filter((x): x is { e: Event; dt: Date } => Boolean(x.dt))
-    .sort((a, b) => a.dt.getTime() - b.dt.getTime());
+    .map((e, idx) => ({
+      eventId: e.id,
+      minutes: parseTimeToMinutes(e.start_time),
+      sortOrder: e.sort_order ?? idx,
+    }))
+    .filter((x): x is { eventId: number; minutes: number; sortOrder: number } => x.minutes !== null)
+    .sort((a, b) => a.minutes - b.minutes || a.sortOrder - b.sortOrder || a.eventId - b.eventId);
 
-  return events.map((event, idx) => {
+  return events.map((event) => {
     if (event.is_live_override === false) return false;
     if (event.is_live_override === true) return true;
+    if (!champ.is_live || !isSameDay) return false;
 
-    const eventStart = toEventDateTime(champ, event);
-    if (!eventStart) return false;
+    const eventStart = parseTimeToMinutes(event.start_time);
+    if (eventStart === null) return false;
 
-    const pos = schedule.findIndex((x) => x.e.id === event.id);
+    const pos = schedule.findIndex((x) => x.eventId === event.id);
     const next = pos >= 0 ? schedule[pos + 1] : undefined;
-    const eventEnd = next?.dt ?? null;
+    const eventEnd = next?.minutes ?? null;
 
-    return now >= eventStart && (!eventEnd || now < eventEnd);
+    return (
+      nowLocal.minutes >= eventStart &&
+      (eventEnd === null || nowLocal.minutes < eventEnd)
+    );
   });
 }
 
