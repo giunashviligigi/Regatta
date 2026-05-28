@@ -7,7 +7,7 @@ export async function PUT(
 ) {
   const { id } = await params;
   const data = await request.json();
-  const participant = updateParticipant(Number(id), {
+  const participant = await updateParticipant(Number(id), {
     place: data.place ?? null,
     first_name: data.first_name || "",
     last_name: data.last_name || "",
@@ -28,7 +28,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const deleted = deleteParticipant(Number(id));
+  const deleted = await deleteParticipant(Number(id));
   if (!deleted) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

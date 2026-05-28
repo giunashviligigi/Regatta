@@ -9,7 +9,7 @@ export async function POST(
   const { id } = await params;
   const championshipId = Number(id);
 
-  if (!getChampionship(championshipId)) {
+  if (!(await getChampionship(championshipId))) {
     return NextResponse.json({ error: "Championship not found" }, { status: 404 });
   }
 
@@ -35,7 +35,11 @@ export async function POST(
     );
   }
 
-  const result = importStartListRaces(championshipId, races, replaceExisting);
+  const result = await importStartListRaces(
+    championshipId,
+    races,
+    replaceExisting
+  );
 
   return NextResponse.json({
     success: true,

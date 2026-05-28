@@ -71,7 +71,7 @@ export default async function ChampionshipPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const championship = getChampionshipFull(Number(id));
+  const championship = await getChampionshipFull(Number(id));
 
   if (!championship) {
     notFound();

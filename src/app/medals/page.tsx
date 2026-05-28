@@ -3,8 +3,8 @@ import { getMedalStats } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export default function MedalsPage() {
-  const stats = getMedalStats();
+export default async function MedalsPage() {
+  const stats = await getMedalStats();
 
   return (
     <div className="min-h-screen">

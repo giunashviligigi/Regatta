@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const championship = getChampionshipFull(Number(id));
+  const championship = await getChampionshipFull(Number(id));
   if (!championship) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

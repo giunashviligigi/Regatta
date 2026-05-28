@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAllChampionships, createChampionship } from "@/lib/db";
 
 export async function GET() {
-  const championships = getAllChampionships();
+  const championships = await getAllChampionships();
   return NextResponse.json(championships);
 }
 
@@ -16,6 +16,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const championship = createChampionship(name, date, location, is_live ?? false);
+  const championship = await createChampionship(
+    name,
+    date,
+    location,
+    is_live ?? false
+  );
   return NextResponse.json(championship, { status: 201 });
 }

@@ -1,5 +1,5 @@
-import fs from "fs";
-import path from "path";
+import "server-only";
+import { createClient } from "@supabase/supabase-js";
 import type {
   Championship,
   Event,
@@ -12,93 +12,62 @@ import type {
 import { defaultColumns } from "./types";
 import type { ParsedRace } from "./parseStartListExcel";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "db.json");
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-interface DbSchema {
-  nextId: {
-    championship: number;
-    event: number;
-    participant: number;
-  };
-  championships: Championship[];
-  events: Event[];
-  participants: Participant[];
+if (!supabaseUrl || !supabaseServiceRoleKey) {
+  throw new Error(
+    "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables."
+  );
 }
 
-function defaultDb(): DbSchema {
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
+function mapChampionship(row: Record<string, unknown>): Championship {
   return {
-    nextId: { championship: 1, event: 1, participant: 1 },
-    championships: [],
-    events: [],
-    participants: [],
+    id: Number(row.id),
+    name: String(row.name ?? ""),
+    date: String(row.date ?? ""),
+    location: String(row.location ?? ""),
+    is_live: Boolean(row.is_live),
+    visible_columns: {
+      ...defaultColumns,
+      ...((row.visible_columns as Partial<ColumnVisibility>) ?? {}),
+    },
+    created_at: String(row.created_at ?? ""),
   };
 }
 
-function migrateChampionship(
-  c: Record<string, unknown> & { id: number; name: string; date: string; location: string; created_at: string }
-): Championship {
+function mapEvent(row: Record<string, unknown>): Event {
   return {
-    id: c.id,
-    name: c.name,
-    date: c.date,
-    location: c.location,
-    created_at: c.created_at,
-    is_live: (c.is_live as boolean) ?? false,
-    visible_columns: { ...defaultColumns, ...((c.visible_columns as Partial<ColumnVisibility>) ?? {}) },
+    id: Number(row.id),
+    championship_id: Number(row.championship_id),
+    name: String(row.name ?? ""),
+    start_time: String(row.start_time ?? ""),
+    sort_order: Number(row.sort_order ?? 0),
+    is_live_override:
+      row.is_live_override === null || row.is_live_override === undefined
+        ? null
+        : Boolean(row.is_live_override),
   };
 }
 
-function migrateEvent(e: Record<string, unknown> & { id: number; championship_id: number; name: string }): Event {
+function mapParticipant(row: Record<string, unknown>): Participant {
   return {
-    id: e.id,
-    championship_id: e.championship_id,
-    name: e.name,
-    start_time: (e.start_time as string) ?? "",
-    sort_order: (e.sort_order as number) ?? 0,
-    is_live_override: (e.is_live_override as boolean | null) ?? null,
+    id: Number(row.id),
+    event_id: Number(row.event_id),
+    place:
+      row.place === null || row.place === undefined ? null : Number(row.place),
+    first_name: String(row.first_name ?? ""),
+    last_name: String(row.last_name ?? ""),
+    team: String(row.team ?? ""),
+    boat_number: String(row.boat_number ?? ""),
+    lane: row.lane === null || row.lane === undefined ? null : Number(row.lane),
+    time_result: String(row.time_result ?? ""),
+    notes: String(row.notes ?? ""),
   };
-}
-
-function migrateParticipant(p: Record<string, unknown> & { id: number; event_id: number }): Participant {
-  return {
-    id: p.id,
-    event_id: p.event_id,
-    place: (p.place as number | null) ?? null,
-    first_name: (p.first_name as string) ?? "",
-    last_name: (p.last_name as string) ?? "",
-    team: (p.team as string) ?? "",
-    boat_number: (p.boat_number as string) ?? "",
-    lane: (p.lane as number | null) ?? null,
-    time_result: (p.time_result as string) ?? "",
-    notes: (p.notes as string) ?? "",
-  };
-}
-
-function readDb(): DbSchema {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(DB_PATH)) {
-    const db = defaultDb();
-    fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
-    return db;
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const raw = JSON.parse(fs.readFileSync(DB_PATH, "utf-8")) as any;
-  return {
-    nextId: raw.nextId,
-    championships: (raw.championships || []).map(migrateChampionship),
-    events: (raw.events || []).map(migrateEvent),
-    participants: (raw.participants || []).map(migrateParticipant),
-  };
-}
-
-function writeDb(db: DbSchema) {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
 
 // --- Auto-live computation ---
@@ -140,43 +109,71 @@ function computeEventLiveStatus(champ: Championship, events: Event[]): boolean[]
 
 // --- Championships ---
 
-export function getAllChampionships(): Championship[] {
-  const db = readDb();
-  return [...db.championships].sort(
-    (a, b) => b.date.localeCompare(a.date) || b.id - a.id
-  );
+export async function getAllChampionships(): Promise<Championship[]> {
+  const { data, error } = await supabase
+    .from("championships")
+    .select("*")
+    .order("date", { ascending: false })
+    .order("id", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapChampionship);
 }
 
-export function getChampionship(id: number): Championship | undefined {
-  const db = readDb();
-  return db.championships.find((c) => c.id === id);
+export async function getChampionship(
+  id: number
+): Promise<Championship | undefined> {
+  const { data, error } = await supabase
+    .from("championships")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapChampionship(data) : undefined;
 }
 
-export function getChampionshipFull(id: number): ChampionshipFull | null {
-  const db = readDb();
-  const champ = db.championships.find((c) => c.id === id);
+export async function getChampionshipFull(
+  id: number
+): Promise<ChampionshipFull | null> {
+  const champ = await getChampionship(id);
   if (!champ) return null;
 
-  const events = db.events
-    .filter((e) => e.championship_id === id)
-    .sort((a, b) => {
-      // IMPORTANT: Keep the same order as imported/entered (top-to-bottom in Excel).
-      // `sort_order` is set on import (0..N) and when manually adding events.
-      return a.sort_order - b.sort_order || a.id - b.id;
-    });
+  const { data: eventsData, error: eventsError } = await supabase
+    .from("events")
+    .select("*")
+    .eq("championship_id", id)
+    .order("sort_order", { ascending: true })
+    .order("id", { ascending: true });
+  if (eventsError) throw eventsError;
+  const events = (eventsData ?? []).map(mapEvent);
 
   const liveStatuses = computeEventLiveStatus(champ, events);
+  const eventIds = events.map((e) => e.id);
+  let participantsByEvent = new Map<number, Participant[]>();
+
+  if (eventIds.length > 0) {
+    const { data: participantRows, error: participantsError } = await supabase
+      .from("participants")
+      .select("*")
+      .in("event_id", eventIds);
+    if (participantsError) throw participantsError;
+    const participants = (participantRows ?? []).map(mapParticipant).sort((a, b) => {
+      if (a.place === null && b.place === null) return a.id - b.id;
+      if (a.place === null) return 1;
+      if (b.place === null) return -1;
+      return a.place - b.place || a.id - b.id;
+    });
+
+    participantsByEvent = participants.reduce((acc, p) => {
+      const list = acc.get(p.event_id) ?? [];
+      list.push(p);
+      acc.set(p.event_id, list);
+      return acc;
+    }, new Map<number, Participant[]>());
+  }
 
   const eventsWithParticipants: EventWithParticipants[] = events.map(
     (event, idx) => {
-      const participants = db.participants
-        .filter((p) => p.event_id === event.id)
-        .sort((a, b) => {
-          if (a.place === null && b.place === null) return a.id - b.id;
-          if (a.place === null) return 1;
-          if (b.place === null) return -1;
-          return a.place - b.place;
-        });
+      const participants = participantsByEvent.get(event.id) ?? [];
       return { ...event, participants, is_live: liveStatuses[idx] };
     }
   );
@@ -184,101 +181,87 @@ export function getChampionshipFull(id: number): ChampionshipFull | null {
   return { ...champ, events: eventsWithParticipants };
 }
 
-export function createChampionship(
+export async function createChampionship(
   name: string,
   date: string,
   location: string,
   isLive: boolean = false,
   visibleColumns?: Partial<ColumnVisibility>
-): Championship {
-  const db = readDb();
-  const championship: Championship = {
-    id: db.nextId.championship++,
-    name,
-    date,
-    location,
-    is_live: isLive,
-    visible_columns: { ...defaultColumns, ...(visibleColumns ?? {}) },
-    created_at: new Date().toISOString(),
-  };
-  db.championships.push(championship);
-  writeDb(db);
-  return championship;
+): Promise<Championship> {
+  const { data, error } = await supabase
+    .from("championships")
+    .insert({
+      name,
+      date,
+      location,
+      is_live: isLive,
+      visible_columns: { ...defaultColumns, ...(visibleColumns ?? {}) },
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapChampionship(data);
 }
 
-export function updateChampionship(
+export async function updateChampionship(
   id: number,
   data: { name?: string; date?: string; location?: string; is_live?: boolean; visible_columns?: Partial<ColumnVisibility> }
-): Championship | null {
-  const db = readDb();
-  const idx = db.championships.findIndex((c) => c.id === id);
-  if (idx === -1) return null;
-  const c = db.championships[idx];
-  db.championships[idx] = {
-    ...c,
-    name: data.name ?? c.name,
-    date: data.date ?? c.date,
-    location: data.location ?? c.location,
-    is_live: data.is_live ?? c.is_live,
-    visible_columns: data.visible_columns
-      ? { ...c.visible_columns, ...data.visible_columns }
-      : c.visible_columns,
-  };
-  writeDb(db);
-  return db.championships[idx];
+): Promise<Championship | null> {
+  const current = await getChampionship(id);
+  if (!current) return null;
+  const { data: updated, error } = await supabase
+    .from("championships")
+    .update({
+      name: data.name ?? current.name,
+      date: data.date ?? current.date,
+      location: data.location ?? current.location,
+      is_live: data.is_live ?? current.is_live,
+      visible_columns: data.visible_columns
+        ? { ...current.visible_columns, ...data.visible_columns }
+        : current.visible_columns,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapChampionship(updated);
 }
 
-export function deleteChampionship(id: number): boolean {
-  const db = readDb();
-  const idx = db.championships.findIndex((c) => c.id === id);
-  if (idx === -1) return false;
-
-  const eventIds = db.events
-    .filter((e) => e.championship_id === id)
-    .map((e) => e.id);
-  db.participants = db.participants.filter(
-    (p) => !eventIds.includes(p.event_id)
-  );
-  db.events = db.events.filter((e) => e.championship_id !== id);
-  db.championships.splice(idx, 1);
-  writeDb(db);
-  return true;
+export async function deleteChampionship(id: number): Promise<boolean> {
+  const { error, count } = await supabase
+    .from("championships")
+    .delete({ count: "exact" })
+    .eq("id", id);
+  if (error) throw error;
+  return (count ?? 0) > 0;
 }
 
-export function duplicateChampionship(id: number): Championship | null {
-  const db = readDb();
-  const source = db.championships.find((c) => c.id === id);
+export async function duplicateChampionship(
+  id: number
+): Promise<Championship | null> {
+  const source = await getChampionship(id);
   if (!source) return null;
 
-  const newChamp: Championship = {
-    id: db.nextId.championship++,
-    name: `${source.name} (Copy)`,
-    date: new Date().toISOString().split("T")[0],
-    location: source.location,
-    is_live: false,
-    visible_columns: { ...source.visible_columns },
-    created_at: new Date().toISOString(),
-  };
-  db.championships.push(newChamp);
+  const newChamp = await createChampionship(
+    `${source.name} (Copy)`,
+    new Date().toISOString().split("T")[0],
+    source.location,
+    false,
+    source.visible_columns
+  );
 
-  const sourceEvents = db.events.filter((e) => e.championship_id === id);
-  for (const srcEvent of sourceEvents) {
-    const newEvent: Event = {
-      id: db.nextId.event++,
-      championship_id: newChamp.id,
-      name: srcEvent.name,
-      start_time: srcEvent.start_time,
-      sort_order: srcEvent.sort_order,
-      is_live_override: null,
-    };
-    db.events.push(newEvent);
+  const sourceFull = await getChampionshipFull(id);
+  if (!sourceFull) return newChamp;
 
-    const srcParticipants = db.participants.filter(
-      (p) => p.event_id === srcEvent.id
+  for (const srcEvent of sourceFull.events) {
+    const newEvent = await createEvent(
+      newChamp.id,
+      srcEvent.name,
+      srcEvent.sort_order,
+      srcEvent.start_time
     );
-    for (const srcP of srcParticipants) {
-      const newP: Participant = {
-        id: db.nextId.participant++,
+    for (const srcP of srcEvent.participants) {
+      await createParticipant({
         event_id: newEvent.id,
         place: null,
         first_name: srcP.first_name,
@@ -288,12 +271,9 @@ export function duplicateChampionship(id: number): Championship | null {
         lane: srcP.lane,
         time_result: "",
         notes: "",
-      };
-      db.participants.push(newP);
+      });
     }
   }
-
-  writeDb(db);
   return newChamp;
 }
 
@@ -309,12 +289,16 @@ function medalEntryName(p: Participant): string {
   return (p.team || "").trim();
 }
 
-export function getMedalStats(): MedalRow[] {
-  const db = readDb();
+export async function getMedalStats(): Promise<MedalRow[]> {
+  const { data, error } = await supabase
+    .from("participants")
+    .select("*")
+    .in("place", [1, 2, 3]);
+  if (error) throw error;
   const counts: Record<string, { gold: number; silver: number; bronze: number }> = {};
 
-  for (const p of db.participants) {
-    if (p.place !== 1 && p.place !== 2 && p.place !== 3) continue;
+  for (const pRaw of data ?? []) {
+    const p = mapParticipant(pRaw);
     const name = medalEntryName(p);
     if (!name) continue;
     if (!counts[name]) counts[name] = { gold: 0, silver: 0, bronze: 0 };
@@ -339,110 +323,118 @@ export function getMedalStats(): MedalRow[] {
 
 // --- Events ---
 
-export function createEvent(
+export async function createEvent(
   championshipId: number,
   name: string,
   sortOrder?: number,
   startTime: string = ""
-): Event {
-  const db = readDb();
-  const nextSort =
-    sortOrder ??
-    (Math.max(
-      -1,
-      ...db.events
-        .filter((e) => e.championship_id === championshipId)
-        .map((e) => e.sort_order)
-    ) + 1);
-  const event: Event = {
-    id: db.nextId.event++,
-    championship_id: championshipId,
-    name,
-    start_time: startTime,
-    sort_order: nextSort,
-    is_live_override: null,
-  };
-  db.events.push(event);
-  writeDb(db);
-  return event;
+): Promise<Event> {
+  let nextSort = sortOrder;
+  if (nextSort === undefined) {
+    const { data: existing, error: orderErr } = await supabase
+      .from("events")
+      .select("sort_order")
+      .eq("championship_id", championshipId)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (orderErr) throw orderErr;
+    nextSort = (existing?.sort_order ?? -1) + 1;
+  }
+
+  const { data, error } = await supabase
+    .from("events")
+    .insert({
+      championship_id: championshipId,
+      name,
+      start_time: startTime,
+      sort_order: nextSort,
+      is_live_override: null,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapEvent(data);
 }
 
-export function updateEvent(
+export async function updateEvent(
   id: number,
   data: { name?: string; sort_order?: number; start_time?: string; is_live_override?: boolean | null }
-): Event | null {
-  const db = readDb();
-  const idx = db.events.findIndex((e) => e.id === id);
-  if (idx === -1) return null;
-  const e = db.events[idx];
-  db.events[idx] = {
-    ...e,
-    name: data.name ?? e.name,
-    sort_order: data.sort_order ?? e.sort_order,
-    start_time: data.start_time !== undefined ? data.start_time : e.start_time,
-    is_live_override: data.is_live_override !== undefined ? data.is_live_override : e.is_live_override,
-  };
-  writeDb(db);
-  return db.events[idx];
+): Promise<Event | null> {
+  const { data: current, error: currentErr } = await supabase
+    .from("events")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (currentErr) throw currentErr;
+  if (!current) return null;
+
+  const { data: updated, error } = await supabase
+    .from("events")
+    .update({
+      name: data.name ?? current.name,
+      sort_order: data.sort_order ?? current.sort_order,
+      start_time:
+        data.start_time !== undefined ? data.start_time : current.start_time,
+      is_live_override:
+        data.is_live_override !== undefined
+          ? data.is_live_override
+          : current.is_live_override,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapEvent(updated);
 }
 
-export function deleteEvent(id: number): boolean {
-  const db = readDb();
-  const idx = db.events.findIndex((e) => e.id === id);
-  if (idx === -1) return false;
-  db.participants = db.participants.filter((p) => p.event_id !== id);
-  db.events.splice(idx, 1);
-  writeDb(db);
-  return true;
+export async function deleteEvent(id: number): Promise<boolean> {
+  const { error, count } = await supabase
+    .from("events")
+    .delete({ count: "exact" })
+    .eq("id", id);
+  if (error) throw error;
+  return (count ?? 0) > 0;
 }
 
-export function deleteAllEventsForChampionship(championshipId: number): void {
-  const db = readDb();
-  const eventIds = db.events
-    .filter((e) => e.championship_id === championshipId)
-    .map((e) => e.id);
-  db.participants = db.participants.filter((p) => !eventIds.includes(p.event_id));
-  db.events = db.events.filter((e) => e.championship_id !== championshipId);
-  writeDb(db);
+export async function deleteAllEventsForChampionship(
+  championshipId: number
+): Promise<void> {
+  const { error } = await supabase
+    .from("events")
+    .delete()
+    .eq("championship_id", championshipId);
+  if (error) throw error;
 }
 
-export function importStartListRaces(
+export async function importStartListRaces(
   championshipId: number,
   races: ParsedRace[],
   replaceExisting: boolean = false
-): { eventsCreated: number; participantsCreated: number } {
-  const db = readDb();
-  const champ = db.championships.find((c) => c.id === championshipId);
+): Promise<{ eventsCreated: number; participantsCreated: number }> {
+  const champ = await getChampionship(championshipId);
   if (!champ) {
     return { eventsCreated: 0, participantsCreated: 0 };
   }
 
   if (replaceExisting) {
-    const eventIds = db.events
-      .filter((e) => e.championship_id === championshipId)
-      .map((e) => e.id);
-    db.participants = db.participants.filter((p) => !eventIds.includes(p.event_id));
-    db.events = db.events.filter((e) => e.championship_id !== championshipId);
+    await deleteAllEventsForChampionship(championshipId);
   }
 
   let eventsCreated = 0;
   let participantsCreated = 0;
 
-  races.forEach((race, index) => {
-    const event: Event = {
-      id: db.nextId.event++,
-      championship_id: championshipId,
-      name: race.name,
-      start_time: race.start_time,
-      sort_order: index,
-      is_live_override: null,
-    };
-    db.events.push(event);
+  for (const [index, race] of races.entries()) {
+    const event = await createEvent(
+      championshipId,
+      race.name,
+      index,
+      race.start_time
+    );
     eventsCreated++;
 
     for (const p of race.participants) {
-      db.participants.push({
-        id: db.nextId.participant++,
+      await createParticipant({
         event_id: event.id,
         place: p.place,
         first_name: "",
@@ -455,15 +447,14 @@ export function importStartListRaces(
       });
       participantsCreated++;
     }
-  });
+  }
 
-  writeDb(db);
   return { eventsCreated, participantsCreated };
 }
 
 // --- Participants ---
 
-export function createParticipant(data: {
+export async function createParticipant(data: {
   event_id: number;
   place: number | null;
   first_name: string;
@@ -473,18 +464,17 @@ export function createParticipant(data: {
   lane: number | null;
   time_result: string;
   notes: string;
-}): Participant {
-  const db = readDb();
-  const participant: Participant = {
-    id: db.nextId.participant++,
-    ...data,
-  };
-  db.participants.push(participant);
-  writeDb(db);
-  return participant;
+}): Promise<Participant> {
+  const { data: created, error } = await supabase
+    .from("participants")
+    .insert(data)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapParticipant(created);
 }
 
-export function updateParticipant(
+export async function updateParticipant(
   id: number,
   data: {
     place: number | null;
@@ -496,20 +486,22 @@ export function updateParticipant(
     time_result: string;
     notes: string;
   }
-): Participant | null {
-  const db = readDb();
-  const idx = db.participants.findIndex((p) => p.id === id);
-  if (idx === -1) return null;
-  db.participants[idx] = { ...db.participants[idx], ...data };
-  writeDb(db);
-  return db.participants[idx];
+): Promise<Participant | null> {
+  const { data: updated, error } = await supabase
+    .from("participants")
+    .update(data)
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return updated ? mapParticipant(updated) : null;
 }
 
-export function deleteParticipant(id: number): boolean {
-  const db = readDb();
-  const idx = db.participants.findIndex((p) => p.id === id);
-  if (idx === -1) return false;
-  db.participants.splice(idx, 1);
-  writeDb(db);
-  return true;
+export async function deleteParticipant(id: number): Promise<boolean> {
+  const { error, count } = await supabase
+    .from("participants")
+    .delete({ count: "exact" })
+    .eq("id", id);
+  if (error) throw error;
+  return (count ?? 0) > 0;
 }

@@ -16,8 +16,8 @@ function formatDate(dateStr: string) {
   }
 }
 
-export default function HomePage() {
-  const championships = getAllChampionships();
+export default async function HomePage() {
+  const championships = await getAllChampionships();
 
   return (
     <div className="min-h-screen">

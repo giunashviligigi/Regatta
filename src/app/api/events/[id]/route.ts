@@ -7,7 +7,7 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const event = updateEvent(Number(id), {
+  const event = await updateEvent(Number(id), {
     name: body.name,
     sort_order: body.sort_order,
     start_time: body.start_time,
@@ -24,7 +24,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const deleted = deleteEvent(Number(id));
+  const deleted = await deleteEvent(Number(id));
   if (!deleted) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const championship = getChampionship(Number(id));
+  const championship = await getChampionship(Number(id));
   if (!championship) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -23,7 +23,7 @@ export async function PUT(
 ) {
   const { id } = await params;
   const body = await request.json();
-  const championship = updateChampionship(Number(id), body);
+  const championship = await updateChampionship(Number(id), body);
   if (!championship) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -35,7 +35,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const deleted = deleteChampionship(Number(id));
+  const deleted = await deleteChampionship(Number(id));
   if (!deleted) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

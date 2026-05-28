@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const participant = createParticipant({
+  const participant = await createParticipant({
     event_id: data.event_id,
     place: data.place ?? null,
     first_name: data.first_name || "",

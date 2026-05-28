@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const event = createEvent(
+  const event = await createEvent(
     championship_id,
     name,
     typeof sort_order === "number" ? sort_order : undefined,

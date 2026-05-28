@@ -6,7 +6,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const championship = duplicateChampionship(Number(id));
+  const championship = await duplicateChampionship(Number(id));
   if (!championship) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
