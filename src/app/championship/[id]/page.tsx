@@ -1,15 +1,10 @@
-import { Fragment } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getChampionshipFull } from "@/lib/db";
-import {
-  columnLabels,
-  visibleColumnsInOrder,
-  type ColumnKey,
-  type Participant,
-} from "@/lib/types";
+import { visibleColumnsInOrder } from "@/lib/types";
 import PrintButton from "@/components/PrintButton";
 import LiveRefresh from "@/components/LiveRefresh";
+import RaceAccordion from "@/components/RaceAccordion";
 
 export const dynamic = "force-dynamic";
 
@@ -23,82 +18,6 @@ function formatDate(dateStr: string) {
     });
   } catch {
     return dateStr;
-  }
-}
-
-function PlaceBadge({ place }: { place: number | null }) {
-  if (!place) return <span className="text-gray-400">-</span>;
-
-  if (place === 1)
-    return (
-      <span className="inline-flex items-center gap-1 font-bold text-amber-500">
-        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-        </svg>
-        1st
-      </span>
-    );
-  if (place === 2)
-    return (
-      <span className="inline-flex items-center gap-1 font-bold text-gray-400">
-        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-        </svg>
-        2nd
-      </span>
-    );
-  if (place === 3)
-    return (
-      <span className="inline-flex items-center gap-1 font-bold text-amber-700">
-        <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-        </svg>
-        3rd
-      </span>
-    );
-
-  return <span className="font-medium text-gray-600">{place}th</span>;
-}
-
-function columnHeaderLabel(key: ColumnKey, cols: Record<ColumnKey, boolean>) {
-  if (key === "first_name" && cols.last_name && !cols.first_name) {
-    return "Name";
-  }
-  return columnLabels[key];
-}
-
-function renderParticipantCell(key: ColumnKey, p: Participant) {
-  switch (key) {
-    case "place":
-      return (
-        <td className="px-6 py-3">
-          <PlaceBadge place={p.place} />
-        </td>
-      );
-    case "first_name":
-      return (
-        <td className="px-6 py-3 font-medium">{p.first_name || "-"}</td>
-      );
-    case "last_name":
-      return (
-        <td className="px-6 py-3 font-medium">{p.last_name || "-"}</td>
-      );
-    case "team":
-      return <td className="px-6 py-3 text-gray-700">{p.team || "-"}</td>;
-    case "boat_number":
-      return <td className="px-6 py-3 text-gray-600">{p.boat_number || "-"}</td>;
-    case "lane":
-      return <td className="px-6 py-3 text-gray-600">{p.lane ?? "-"}</td>;
-    case "time_result":
-      return (
-        <td className="px-6 py-3 font-mono text-gray-700">
-          {p.time_result || "-"}
-        </td>
-      );
-    case "notes":
-      return (
-        <td className="px-6 py-3 text-gray-500 italic">{p.notes || "-"}</td>
-      );
   }
 }
 
@@ -122,7 +41,9 @@ export default async function ChampionshipPage({
 
   return (
     <div className="min-h-screen">
-      {(championship.is_live || championship.events.some(e => e.is_live)) && <LiveRefresh />}
+      {(championship.is_live || championship.events.some((e) => e.is_live)) && (
+        <LiveRefresh />
+      )}
 
       <header className="bg-gradient-to-r from-primary-800 to-primary-900 text-white">
         <div className="mx-auto max-w-5xl px-4 py-10">
@@ -216,82 +137,18 @@ export default async function ChampionshipPage({
             </p>
           </div>
         ) : (
-          <div className="space-y-8">
+          <div className="space-y-3">
+            <div className="hidden px-6 text-xs font-semibold uppercase tracking-wider text-gray-400 sm:flex">
+              <span className="w-14 shrink-0 text-center">Time</span>
+              <span className="flex-1">Race</span>
+            </div>
             {championship.events.map((event) => (
-              <div
+              <RaceAccordion
                 key={event.id}
-                className="overflow-hidden rounded-xl bg-white shadow-sm"
-              >
-                <div className="border-b border-gray-100 bg-gray-50 px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    {event.start_time && (
-                      <span className="rounded bg-gray-200 px-2 py-0.5 text-xs font-mono font-medium text-gray-500">
-                        {event.start_time}
-                      </span>
-                    )}
-                    <h2 className="text-lg font-semibold text-gray-800">
-                      {event.name}
-                    </h2>
-                    {event.is_live && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-xs font-bold text-white print:hidden">
-                        <span className="live-dot h-1.5 w-1.5 rounded-full bg-white" />
-                        LIVE
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {event.participants.length === 0 ? (
-                  <div className="p-6 text-center text-gray-400">
-                    No results yet
-                  </div>
-                ) : null}
-                {event.participants.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-100 text-xs uppercase tracking-wider text-gray-500">
-                          {tableColumns.map((key) => (
-                            <th key={key} className="px-6 py-3 font-medium">
-                              {columnHeaderLabel(key, cols)}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {event.participants.map((p, idx) => (
-                          <tr
-                            key={p.id}
-                            className={`border-b border-gray-50 transition-colors hover:bg-gray-50 ${
-                              p.place === 1
-                                ? "bg-amber-50/50"
-                                : idx % 2 === 1
-                                ? "bg-gray-50/50"
-                                : ""
-                            }`}
-                          >
-                            {tableColumns.map((key) => (
-                              <Fragment key={key}>
-                                {renderParticipantCell(key, p)}
-                              </Fragment>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : null}
-                {event.race_note ? (
-                  <div className="border-t border-gray-100 bg-amber-50/30 px-6 py-4">
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Note
-                    </p>
-                    <p className="whitespace-pre-wrap text-sm text-gray-700">
-                      {event.race_note}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
+                event={event}
+                tableColumns={tableColumns}
+                cols={cols}
+              />
             ))}
           </div>
         )}

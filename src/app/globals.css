@@ -25,6 +25,14 @@
   animation: live-pulse 1.5s ease-in-out infinite;
 }
 
+.race-accordion > summary {
+  list-style: none;
+}
+
+.race-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+
 @media print {
   body {
     background: white !important;
@@ -61,5 +69,17 @@
   .shadow-sm {
     box-shadow: none !important;
     border: 1px solid #e5e7eb !important;
+  }
+
+  .race-accordion > summary {
+    list-style: none;
+  }
+
+  .race-accordion > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .race-accordion-panel {
+    display: block !important;
   }
 }
