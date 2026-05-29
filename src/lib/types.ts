@@ -116,4 +116,6 @@ export interface ChampionshipFull extends Championship {
 
 export interface SiteSettings {
   images_link: string;
+  facebook_link: string;
+  instagram_link: string;
 }

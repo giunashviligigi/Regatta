@@ -570,35 +570,61 @@ export async function deleteParticipant(id: number): Promise<boolean> {
 
 // --- Site settings ---
 
-const defaultSiteSettings: SiteSettings = { images_link: "" };
+const defaultSiteSettings: SiteSettings = {
+  images_link: "",
+  facebook_link: "",
+  instagram_link: "",
+};
+
+function mapSiteSettings(row: Record<string, unknown>): SiteSettings {
+  return {
+    images_link: String(row.images_link ?? "").trim(),
+    facebook_link: String(row.facebook_link ?? "").trim(),
+    instagram_link: String(row.instagram_link ?? "").trim(),
+  };
+}
 
 export async function getSiteSettings(): Promise<SiteSettings> {
   const { data, error } = await supabase
     .from("site_settings")
-    .select("images_link")
+    .select("images_link, facebook_link, instagram_link")
     .eq("id", 1)
     .maybeSingle();
   if (error) throw error;
   if (!data) {
-    await supabase.from("site_settings").insert({ id: 1, images_link: "" });
+    await supabase.from("site_settings").insert({ id: 1, ...defaultSiteSettings });
     return defaultSiteSettings;
   }
-  return { images_link: String(data.images_link ?? "").trim() };
+  return mapSiteSettings(data);
 }
 
 export async function updateSiteSettings(
-  imagesLink: string
+  settings: Partial<SiteSettings>
 ): Promise<SiteSettings> {
-  const images_link = imagesLink.trim();
+  const current = await getSiteSettings();
+  const next: SiteSettings = {
+    images_link:
+      settings.images_link !== undefined
+        ? settings.images_link.trim()
+        : current.images_link,
+    facebook_link:
+      settings.facebook_link !== undefined
+        ? settings.facebook_link.trim()
+        : current.facebook_link,
+    instagram_link:
+      settings.instagram_link !== undefined
+        ? settings.instagram_link.trim()
+        : current.instagram_link,
+  };
   const { data, error } = await supabase
     .from("site_settings")
     .upsert({
       id: 1,
-      images_link,
+      ...next,
       updated_at: new Date().toISOString(),
     })
-    .select("images_link")
+    .select("images_link, facebook_link, instagram_link")
     .single();
   if (error) throw error;
-  return { images_link: String(data.images_link ?? "").trim() };
+  return mapSiteSettings(data);
 }

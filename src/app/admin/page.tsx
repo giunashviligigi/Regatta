@@ -13,6 +13,8 @@ export default function AdminDashboard() {
   const [form, setForm] = useState({ name: "", date: "", location: "" });
   const [loading, setLoading] = useState(true);
   const [imagesLink, setImagesLink] = useState("");
+  const [facebookLink, setFacebookLink] = useState("");
+  const [instagramLink, setInstagramLink] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState("");
 
@@ -28,6 +30,8 @@ export default function AdminDashboard() {
     if (!res.ok) return;
     const data = await res.json();
     setImagesLink(data.images_link || "");
+    setFacebookLink(data.facebook_link || "");
+    setInstagramLink(data.instagram_link || "");
   }, []);
 
   useEffect(() => {
@@ -42,7 +46,11 @@ export default function AdminDashboard() {
     const res = await fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ images_link: imagesLink }),
+      body: JSON.stringify({
+        images_link: imagesLink,
+        facebook_link: facebookLink,
+        instagram_link: instagramLink,
+      }),
     });
     setSettingsSaving(false);
     if (!res.ok) {
@@ -52,7 +60,9 @@ export default function AdminDashboard() {
     }
     const data = await res.json();
     setImagesLink(data.images_link || "");
-    setSettingsMessage("Images link saved.");
+    setFacebookLink(data.facebook_link || "");
+    setInstagramLink(data.instagram_link || "");
+    setSettingsMessage("Site settings saved.");
   }
 
   async function handleLogout() {
@@ -156,11 +166,10 @@ export default function AdminDashboard() {
             Site Settings
           </h2>
           <p className="mb-4 text-sm text-gray-500">
-            Set the URL for the Images button on the home page. Leave empty to
-            hide the button.
+            Set home page button links. Leave empty to hide a button.
           </p>
-          <form onSubmit={handleSaveSettings} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
+          <form onSubmit={handleSaveSettings} className="space-y-4">
+            <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
                 Images link
               </label>
@@ -172,12 +181,36 @@ export default function AdminDashboard() {
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               />
             </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Facebook link
+              </label>
+              <input
+                type="url"
+                value={facebookLink}
+                onChange={(e) => setFacebookLink(e.target.value)}
+                placeholder="https://facebook.com/your-page"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Instagram link
+              </label>
+              <input
+                type="url"
+                value={instagramLink}
+                onChange={(e) => setInstagramLink(e.target.value)}
+                placeholder="https://instagram.com/your-page"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
             <button
               type="submit"
               disabled={settingsSaving}
               className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-60"
             >
-              {settingsSaving ? "Saving..." : "Save Link"}
+              {settingsSaving ? "Saving..." : "Save settings"}
             </button>
           </form>
           {settingsMessage ? (
